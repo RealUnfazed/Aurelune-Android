@@ -7,14 +7,23 @@ import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Intent;
 import android.content.pm.ServiceInfo;
+import android.graphics.drawable.Icon;
+import android.media.MediaMetadata;
+import android.media.session.MediaSession;
+import android.media.session.PlaybackState;
 import android.os.Build;
 import android.os.IBinder;
 import android.os.PowerManager;
+import android.os.SystemClock;
 
 /**
- * Runs only while music is playing. It does no audio work itself (the page plays the audio); it exists so Android treats
- * Aurelune as a music player: the process is not killed and the CPU stays awake with the screen off. It shows a small
- * "playing" notification that opens the app when tapped.
+ * Runs from the first song until the app is closed. The page plays the audio; this service makes Android treat Aurelune
+ * as a music player:
+ *  - while playing it is a foreground service (the process is not killed, the CPU stays awake with the screen off);
+ *  - it owns a MediaSession, so the notification, the lock screen and headset / Bluetooth buttons show and control the
+ *    current song (title, artist, cover, previous / play-pause / next, seek bar);
+ *  - while paused the notification stays, so you can resume from it, and it can be swiped away.
+ * What is shown comes from MediaState; button presses go back to the page through MediaState.dispatch().
  */
 public class PlaybackService extends Service {
 
@@ -22,6 +31,19 @@ public class PlaybackService extends Service {
     private static final int NOTIFICATION_ID = 1;
     private static final long WAKE_LOCK_MAX_MS = 6L * 60 * 60 * 1000; // safety net: never hold the CPU awake for more than 6 hours
 
+    private static PlaybackService instance;
+
+    static boolean isRunning() {
+        return instance != null;
+    }
+
+    /** Redraws the notification and lock screen from MediaState. */
+    static void refresh() {
+        if (instance != null) instance.render(false);
+    }
+
+    private NotificationManager notifications;
+    private MediaSession session;
     private PowerManager.WakeLock wakeLock;
 
     @Override
@@ -30,44 +52,127 @@ public class PlaybackService extends Service {
     }
 
     @Override
-    public int onStartCommand(Intent intent, int flags, int startId) {
+    public void onCreate() {
+        super.onCreate();
+        instance = this;
+        notifications = getSystemService(NotificationManager.class);
         createChannel();
-        Notification notification = buildNotification();
-        if (Build.VERSION.SDK_INT >= 29) {
-            startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK);
-        } else {
-            startForeground(NOTIFICATION_ID, notification);
-        }
 
-        if (wakeLock == null) {
-            PowerManager pm = (PowerManager) getSystemService(POWER_SERVICE);
-            wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Aurelune:playback");
-            wakeLock.setReferenceCounted(false);
-        }
-        if (!wakeLock.isHeld()) wakeLock.acquire(WAKE_LOCK_MAX_MS);
+        session = new MediaSession(this, "Aurelune");
+        // Android 7.x only: without these flags headset / Bluetooth buttons don't reach the session (ignored on newer versions).
+        session.setFlags(MediaSession.FLAG_HANDLES_MEDIA_BUTTONS | MediaSession.FLAG_HANDLES_TRANSPORT_CONTROLS);
+        session.setCallback(new MediaSession.Callback() {
+            @Override
+            public void onPlay() {
+                MediaState.dispatch("play", 0);
+            }
 
+            @Override
+            public void onPause() {
+                MediaState.dispatch("pause", 0);
+            }
+
+            @Override
+            public void onSkipToNext() {
+                MediaState.dispatch("next", 0);
+            }
+
+            @Override
+            public void onSkipToPrevious() {
+                MediaState.dispatch("prev", 0);
+            }
+
+            @Override
+            public void onSeekTo(long positionMs) {
+                MediaState.dispatch("seek", positionMs / 1000.0);
+            }
+
+            @Override
+            public void onStop() {
+                MediaState.dispatch("stop", 0);
+            }
+        });
+        session.setActive(true);
+    }
+
+    @Override
+    public int onStartCommand(Intent intent, int flags, int startId) {
+        render(true); // after startForegroundService() Android requires startForeground() within seconds, whatever the state
+        if (!MediaState.playing) render(false);
         return START_NOT_STICKY;
     }
 
     @Override
     public void onTaskRemoved(Intent rootIntent) {
-        stopSelf(); // swiped away from recent apps: nothing is playing any more
+        stopSelf(); // swiped away from recent apps
     }
 
     @Override
     public void onDestroy() {
-        if (wakeLock != null && wakeLock.isHeld()) wakeLock.release();
+        instance = null;
+        setWakeLock(false);
+        if (session != null) {
+            session.setActive(false);
+            session.release();
+            session = null;
+        }
+        notifications.cancel(NOTIFICATION_ID); // a paused (detached) notification would otherwise outlive the service
         super.onDestroy();
     }
 
-    private void createChannel() {
-        if (Build.VERSION.SDK_INT < 26) return;
-        NotificationChannel channel = new NotificationChannel(CHANNEL_ID, getString(R.string.playback_channel), NotificationManager.IMPORTANCE_LOW);
-        channel.setShowBadge(false);
-        getSystemService(NotificationManager.class).createNotificationChannel(channel);
+    /* ------------------------------------------------------------------ drawing */
+
+    private void render(boolean forceForeground) {
+        if (session == null) return;
+        boolean playing = MediaState.playing;
+        updateSession(playing);
+        Notification notification = buildNotification(playing);
+
+        if (playing || forceForeground) {
+            try {
+                if (Build.VERSION.SDK_INT >= 29) {
+                    startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK);
+                } else {
+                    startForeground(NOTIFICATION_ID, notification);
+                }
+            } catch (RuntimeException e) {
+                // Android 12+ may refuse to promote a service to foreground while the app is in the background: just show it.
+                notifications.notify(NOTIFICATION_ID, notification);
+            }
+        } else {
+            stopForeground(STOP_FOREGROUND_DETACH); // stays on screen, but can now be swiped away
+            notifications.notify(NOTIFICATION_ID, notification);
+        }
+        setWakeLock(playing);
     }
 
-    private Notification buildNotification() {
+    private void updateSession(boolean playing) {
+        if (!MediaState.hasMedia()) return;
+
+        MediaMetadata.Builder meta = new MediaMetadata.Builder()
+                .putString(MediaMetadata.METADATA_KEY_TITLE, MediaState.title)
+                .putString(MediaMetadata.METADATA_KEY_ARTIST, MediaState.artist)
+                .putString(MediaMetadata.METADATA_KEY_ALBUM, MediaState.album);
+        if (MediaState.durationMs > 0) meta.putLong(MediaMetadata.METADATA_KEY_DURATION, MediaState.durationMs);
+        if (MediaState.artwork != null) {
+            meta.putBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART, MediaState.artwork);
+            meta.putBitmap(MediaMetadata.METADATA_KEY_ART, MediaState.artwork);
+        }
+        session.setMetadata(meta.build());
+
+        long now = SystemClock.elapsedRealtime();
+        long position = playing ? MediaState.positionMs + (now - MediaState.positionAt) : MediaState.positionMs;
+        if (MediaState.durationMs > 0) position = Math.min(position, MediaState.durationMs);
+        long actions = PlaybackState.ACTION_PLAY | PlaybackState.ACTION_PAUSE | PlaybackState.ACTION_PLAY_PAUSE
+                | PlaybackState.ACTION_SKIP_TO_NEXT | PlaybackState.ACTION_SKIP_TO_PREVIOUS
+                | PlaybackState.ACTION_SEEK_TO | PlaybackState.ACTION_STOP;
+        session.setPlaybackState(new PlaybackState.Builder()
+                .setActions(actions)
+                .setState(playing ? PlaybackState.STATE_PLAYING : PlaybackState.STATE_PAUSED, Math.max(0, position), playing ? 1f : 0f, now)
+                .build());
+    }
+
+    private Notification buildNotification(boolean playing) {
         Intent open = new Intent(this, MainActivity.class).setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
         PendingIntent contentIntent = PendingIntent.getActivity(this, 0, open, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
 
@@ -75,13 +180,62 @@ public class PlaybackService extends Service {
                 ? new Notification.Builder(this, CHANNEL_ID)
                 : new Notification.Builder(this).setPriority(Notification.PRIORITY_LOW);
         b.setSmallIcon(R.drawable.ic_notification)
-                .setContentTitle(getString(R.string.playing_title))
-                .setContentText(getString(R.string.playing_text))
                 .setContentIntent(contentIntent)
-                .setOngoing(true)
+                .setDeleteIntent(actionIntent("stop", 4)) // swiped away: stop the music and the service
+                .setOngoing(playing)
                 .setShowWhen(false)
+                .setVisibility(Notification.VISIBILITY_PUBLIC)
                 .setCategory(Notification.CATEGORY_TRANSPORT);
         if (Build.VERSION.SDK_INT >= 31) b.setForegroundServiceBehavior(Notification.FOREGROUND_SERVICE_IMMEDIATE);
+
+        if (MediaState.hasMedia()) {
+            b.setContentTitle(MediaState.title).setContentText(MediaState.artist);
+            if (!MediaState.album.isEmpty()) b.setSubText(MediaState.album);
+            if (MediaState.artwork != null) b.setLargeIcon(MediaState.artwork);
+            b.addAction(action(R.drawable.ic_prev, R.string.action_previous, "prev", 1));
+            b.addAction(playing
+                    ? action(R.drawable.ic_pause, R.string.action_pause, "pause", 2)
+                    : action(R.drawable.ic_play, R.string.action_play, "play", 2));
+            b.addAction(action(R.drawable.ic_next, R.string.action_next, "next", 3));
+            b.setStyle(new Notification.MediaStyle()
+                    .setMediaSession(session.getSessionToken())
+                    .setShowActionsInCompactView(0, 1, 2));
+        } else {
+            // The page's player could not be reached: a plain "playing" notification, no buttons.
+            b.setContentTitle(getString(R.string.playing_title)).setContentText(getString(R.string.playing_text));
+        }
         return b.build();
+    }
+
+    private Notification.Action action(int icon, int title, String cmd, int requestCode) {
+        return new Notification.Action.Builder(Icon.createWithResource(this, icon), getString(title), actionIntent(cmd, requestCode)).build();
+    }
+
+    private PendingIntent actionIntent(String cmd, int requestCode) {
+        Intent intent = new Intent(this, MediaActionReceiver.class)
+                .setAction("app.aurelune.mobile.MEDIA_" + cmd)
+                .putExtra(MediaActionReceiver.EXTRA_CMD, cmd);
+        return PendingIntent.getBroadcast(this, requestCode, intent, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+    }
+
+    private void createChannel() {
+        if (Build.VERSION.SDK_INT < 26) return;
+        NotificationChannel channel = new NotificationChannel(CHANNEL_ID, getString(R.string.playback_channel), NotificationManager.IMPORTANCE_LOW);
+        channel.setShowBadge(false);
+        channel.setLockscreenVisibility(Notification.VISIBILITY_PUBLIC);
+        notifications.createNotificationChannel(channel);
+    }
+
+    private void setWakeLock(boolean on) {
+        if (on) {
+            if (wakeLock == null) {
+                PowerManager pm = (PowerManager) getSystemService(POWER_SERVICE);
+                wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Aurelune:playback");
+                wakeLock.setReferenceCounted(false);
+            }
+            if (!wakeLock.isHeld()) wakeLock.acquire(WAKE_LOCK_MAX_MS);
+        } else if (wakeLock != null && wakeLock.isHeld()) {
+            wakeLock.release();
+        }
     }
 }

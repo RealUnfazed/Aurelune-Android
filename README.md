@@ -10,7 +10,7 @@ It adds the few things a bare WebView is missing:
 | Uploads | `<input type="file">` opens the system file picker (artists uploading music, covers…) |
 | Back button | goes back inside the site, then sends the app to the background (music keeps playing) |
 | Links | other websites open in the browser; links to your site stay in the app; links to your site tapped in other apps can open in Aurelune |
-| Background music | a small foreground service keeps the app alive and the CPU awake while audio plays, with a "Music is playing" notification |
+| Background music + controls | a foreground service keeps the app alive and the CPU awake while audio plays. The notification (and lock screen) shows the song's title, artist and cover with **previous / play-pause / next** buttons and a seek bar; headset and Bluetooth buttons work too. Pausing keeps the notification so you can resume from it; swiping it away stops the music |
 | Offline | the site's own service worker + IndexedDB offline downloads work as in a browser; if the site can't be reached at all you get a "Try again" screen |
 | File downloads | files the site offers (e.g. your data export) are saved to Downloads |
 | Look | dark from the first frame, status/navigation bars match, notch and keyboard handled, Aurelune icon |
@@ -57,9 +57,10 @@ keytool -genkeypair -keystore aurelune-release.jks -alias aurelune -keyalg RSA -
 
 ## Known limits
 
-- There are no lock-screen / notification play-pause buttons: a WebView does not connect the page's Media Session to
-  Android. The "playing" notification only brings the app back. (Possible later: forward the site's `mediaSession`
-  metadata and actions to a proper media notification.)
+- The notification controls talk to your site's player through `import('/js/player.js')` (the `player` object exported by
+  `public/js/player.js`, see `app/src/main/assets/bridge.js`). If you ever rename or restructure that module, update
+  `bridge.js`; until then the music still plays and a plain "Music is playing" notification is shown, just without the
+  song details and buttons.
 - Offline downloads live in the WebView's storage. Android's "Clear storage" for the app, or uninstalling it, removes them
   (same as clearing a browser's site data).
 - Blob/data downloads started by the page are not supported (normal `https` downloads are).

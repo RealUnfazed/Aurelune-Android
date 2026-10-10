@@ -47,5 +47,10 @@
             android:name=".PlaybackService"
             android:exported="false"
             android:foregroundServiceType="mediaPlayback" />
+
+        <!-- The notification's buttons (previous / play-pause / next) land here. -->
+        <receiver
+            android:name=".MediaActionReceiver"
+            android:exported="false" />
     </application>
 </manifest>
