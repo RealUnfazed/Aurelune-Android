@@ -1,0 +1,4 @@
+// Top-level build file. The only plugin is the Android Gradle Plugin: the app has no other dependencies at all.
+plugins {
+    id 'com.android.application' version '8.7.3' apply false
+}

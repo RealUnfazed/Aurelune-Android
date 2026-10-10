@@ -1,0 +1,72 @@
+plugins {
+    id 'com.android.application'
+}
+
+// ---------------------------------------------------------------------------------------------
+//  The two things you may want to change:
+//    START_URL  the address the app opens (the app also stays locked to this host)
+//    versionCode / versionName  bump versionCode on every release you hand to people
+// ---------------------------------------------------------------------------------------------
+def START_URL = "https://aurelune.unfazed.ir/"
+
+// Signing. By default the release APK is signed with aurelune-release.jks next to this project (see signing.properties).
+// CI or another machine can override any value with an environment variable instead.
+def signingProps = new Properties()
+def signingFile = rootProject.file('signing.properties')
+if (signingFile.exists()) signingFile.withInputStream { signingProps.load(it) }
+def sign = { String envName, String propName -> System.getenv(envName) ?: signingProps.getProperty(propName) }
+
+android {
+    namespace 'app.aurelune.mobile'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'app.aurelune.mobile'
+        minSdk 24
+        targetSdk 35
+        versionCode 1
+        versionName '1.0.0'
+        buildConfigField 'String', 'START_URL', "\"${START_URL}\""
+    }
+
+    signingConfigs {
+        release {
+            storeFile rootProject.file(sign('AURELUNE_KEYSTORE', 'storeFile') ?: 'aurelune-release.jks')
+            storePassword sign('AURELUNE_STORE_PASSWORD', 'storePassword')
+            keyAlias sign('AURELUNE_KEY_ALIAS', 'keyAlias')
+            keyPassword sign('AURELUNE_KEY_PASSWORD', 'keyPassword')
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.release
+        }
+        debug {
+            // Lets a debug build be installed next to the release one.
+            applicationIdSuffix '.debug'
+        }
+    }
+
+    buildFeatures {
+        buildConfig true
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    lint {
+        // A lint warning should never be what stops you getting an APK.
+        abortOnError false
+        checkReleaseBuilds false
+    }
+
+    applicationVariants.all { variant ->
+        variant.outputs.all {
+            outputFileName = "Aurelune-${variant.versionName}-${variant.buildType.name}.apk"
+        }
+    }
+}

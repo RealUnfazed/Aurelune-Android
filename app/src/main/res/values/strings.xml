@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Aurelune</string>
+    <string name="playing_title">Aurelune</string>
+    <string name="playing_text">Music is playing</string>
+    <string name="playback_channel">Playback</string>
+    <string name="download_started">Downloading…</string>
+    <string name="download_failed">Could not start the download</string>
+    <string name="no_file_picker">No app available to pick a file</string>
+</resources>

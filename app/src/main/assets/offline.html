@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Aurelune</title>
+<style>
+  :root { --bg:#0a0b14; --text:#f3f4f8; --dim:#9aa0b4; --green:#1ed760; }
+  * { box-sizing:border-box; }
+  html,body { height:100%; margin:0; background:var(--bg); color:var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Vazirmatn", sans-serif; }
+  main { min-height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:14px; padding:32px 24px; text-align:center; }
+  svg { width:84px; height:84px; margin-bottom:6px; }
+  h1 { margin:0; font-size:22px; font-weight:650; }
+  p { margin:0; max-width:320px; line-height:1.6; color:var(--dim); font-size:15px; }
+  a.btn { margin-top:12px; display:inline-block; padding:13px 34px; border-radius:999px; background:var(--green);
+    color:#04130a; font-weight:650; font-size:16px; text-decoration:none; }
+  a.btn:active { transform:scale(.97); }
+</style>
+</head>
+<body>
+<main>
+  <svg viewBox="0 0 32 32" fill="none" aria-hidden="true">
+    <path d="M20 4a12 12 0 1 0 8 20.6A14 14 0 0 1 20 4Z" fill="#1DB954"/>
+    <circle cx="23" cy="9" r="1.4" fill="#3BE47A"/><circle cx="26" cy="14" r="0.9" fill="#3BE47A"/>
+  </svg>
+  <h1>Can’t reach Aurelune</h1>
+  <p>Check your internet connection and try again.</p>
+  <!-- Keep this address in step with START_URL in app/build.gradle. -->
+  <a class="btn" href="https://aurelune.unfazed.ir/">Try again</a>
+</main>
+</body>
+</html>

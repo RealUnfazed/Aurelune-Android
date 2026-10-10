@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.Aurelune" parent="android:Theme.DeviceDefault.NoActionBar">
+        <item name="android:windowBackground">@color/aurelune_bg</item>
+        <item name="android:colorBackground">@color/aurelune_bg</item>
+        <item name="android:statusBarColor">@color/aurelune_bg</item>
+        <item name="android:navigationBarColor">@color/aurelune_bg</item>
+        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
+        <!-- Android 12+ system splash: the moon on the app's dark background. -->
+        <item name="android:windowSplashScreenBackground">@color/aurelune_bg</item>
+    </style>
+</resources>

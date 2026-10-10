@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.Aurelune" parent="android:Theme.DeviceDefault.NoActionBar">
+        <item name="android:windowBackground">@color/aurelune_bg</item>
+        <item name="android:colorBackground">@color/aurelune_bg</item>
+        <item name="android:statusBarColor">@color/aurelune_bg</item>
+        <item name="android:navigationBarColor">@color/aurelune_bg</item>
+        <!-- Phones with a notch: use the whole screen in landscape too (the app pads for the cutout itself). -->
+        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
+    </style>
+</resources>

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Dark from the very first frame, so there is no white flash before the page appears. -->
+    <style name="Theme.Aurelune" parent="android:Theme.DeviceDefault.NoActionBar">
+        <item name="android:windowBackground">@color/aurelune_bg</item>
+        <item name="android:colorBackground">@color/aurelune_bg</item>
+        <item name="android:statusBarColor">@color/aurelune_bg</item>
+        <item name="android:navigationBarColor">@color/aurelune_bg</item>
+    </style>
+</resources>
