@@ -12,6 +12,7 @@ import android.media.MediaMetadata;
 import android.media.session.MediaSession;
 import android.media.session.PlaybackState;
 import android.os.Build;
+import android.os.Bundle;
 import android.os.IBinder;
 import android.os.PowerManager;
 import android.os.SystemClock;
@@ -91,6 +92,11 @@ public class PlaybackService extends Service {
             public void onStop() {
                 MediaState.dispatch("stop", 0);
             }
+
+            @Override
+            public void onCustomAction(String action, Bundle extras) {
+                if ("shuffle".equals(action) || "repeat".equals(action)) MediaState.dispatch(action, 0);
+            }
         });
         session.setActive(true);
     }
@@ -161,15 +167,39 @@ public class PlaybackService extends Service {
         session.setMetadata(meta.build());
 
         long now = SystemClock.elapsedRealtime();
-        long position = playing ? MediaState.positionMs + (now - MediaState.positionAt) : MediaState.positionMs;
+        // The clock only runs while sound is actually coming out: not while paused, and not while the song is still
+        // downloading / waiting for data.
+        boolean moving = playing && !MediaState.buffering;
+        long position = moving ? MediaState.positionMs + (now - MediaState.positionAt) : MediaState.positionMs;
         if (MediaState.durationMs > 0) position = Math.min(position, MediaState.durationMs);
+        int state = !playing ? PlaybackState.STATE_PAUSED
+                : MediaState.buffering ? PlaybackState.STATE_BUFFERING : PlaybackState.STATE_PLAYING;
         long actions = PlaybackState.ACTION_PLAY | PlaybackState.ACTION_PAUSE | PlaybackState.ACTION_PLAY_PAUSE
                 | PlaybackState.ACTION_SKIP_TO_NEXT | PlaybackState.ACTION_SKIP_TO_PREVIOUS
                 | PlaybackState.ACTION_SEEK_TO | PlaybackState.ACTION_STOP;
         session.setPlaybackState(new PlaybackState.Builder()
                 .setActions(actions)
-                .setState(playing ? PlaybackState.STATE_PLAYING : PlaybackState.STATE_PAUSED, Math.max(0, position), playing ? 1f : 0f, now)
+                .setState(state, Math.max(0, position), moving ? 1f : 0f, now)
+                // Android 13+ draws the media controls from the session: shuffle and repeat go in as custom actions.
+                .addCustomAction(new PlaybackState.CustomAction.Builder("shuffle", getString(shuffleTitle()), shuffleIcon()).build())
+                .addCustomAction(new PlaybackState.CustomAction.Builder("repeat", getString(repeatTitle()), repeatIcon()).build())
                 .build());
+    }
+
+    private int shuffleIcon() {
+        return MediaState.shuffle ? R.drawable.ic_shuffle_on : R.drawable.ic_shuffle;
+    }
+
+    private int shuffleTitle() {
+        return MediaState.shuffle ? R.string.action_shuffle_on : R.string.action_shuffle_off;
+    }
+
+    private int repeatIcon() {
+        return MediaState.repeat == 1 ? R.drawable.ic_repeat_all : MediaState.repeat == 2 ? R.drawable.ic_repeat_one : R.drawable.ic_repeat;
+    }
+
+    private int repeatTitle() {
+        return MediaState.repeat == 1 ? R.string.action_repeat_all : MediaState.repeat == 2 ? R.string.action_repeat_one : R.string.action_repeat_off;
     }
 
     private Notification buildNotification(boolean playing) {
@@ -192,14 +222,17 @@ public class PlaybackService extends Service {
             b.setContentTitle(MediaState.title).setContentText(MediaState.artist);
             if (!MediaState.album.isEmpty()) b.setSubText(MediaState.album);
             if (MediaState.artwork != null) b.setLargeIcon(MediaState.artwork);
+            // shuffle, previous, play/pause, next, repeat (the small collapsed notification shows the middle three)
+            b.addAction(action(shuffleIcon(), shuffleTitle(), "shuffle", 5));
             b.addAction(action(R.drawable.ic_prev, R.string.action_previous, "prev", 1));
             b.addAction(playing
                     ? action(R.drawable.ic_pause, R.string.action_pause, "pause", 2)
                     : action(R.drawable.ic_play, R.string.action_play, "play", 2));
             b.addAction(action(R.drawable.ic_next, R.string.action_next, "next", 3));
+            b.addAction(action(repeatIcon(), repeatTitle(), "repeat", 6));
             b.setStyle(new Notification.MediaStyle()
                     .setMediaSession(session.getSessionToken())
-                    .setShowActionsInCompactView(0, 1, 2));
+                    .setShowActionsInCompactView(1, 2, 3));
         } else {
             // The page's player could not be reached: a plain "playing" notification, no buttons.
             b.setContentTitle(getString(R.string.playing_title)).setContentText(getString(R.string.playing_text));

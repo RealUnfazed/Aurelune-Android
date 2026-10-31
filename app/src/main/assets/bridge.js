@@ -1,7 +1,8 @@
 /* Injected by the Android app after the Aurelune page loads. It changes nothing on the page. It tells the app
      1. when audio starts and stops (so the app can keep playing in the background), and
-     2. what is playing (title, artist, cover, position), read from the site's own player, so the notification and lock
-        screen can show it, and it lets the app press play / pause / next / previous / seek on that player.
+     2. what is playing (title, artist, cover, position, buffering, shuffle, repeat), read from the site's own player, so
+        the notification and lock screen can show it, and it lets the app press play / pause / next / previous / seek /
+        shuffle / repeat on that player.
    The site's player lives in the ES module /js/player.js (export const player). If that ever changes, only part 2 stops
    working; the music itself and part 1 do not depend on it. */
 (function () {
@@ -16,6 +17,7 @@
   var lastEl = null;        // the one that played last
   var last = null;          // last state sent to the app
   var timer = null;
+  var notify = function () { };   // part 2 replaces this: "an audio element changed state, tell the app if it matters"
 
   function send(state) {
     last = state;
@@ -40,9 +42,13 @@
   function hook(el) {
     if (hooked.has(el)) return;
     hooked.add(el);
-    el.addEventListener('playing', function () { lastEl = el; active.add(el); report(); });
+    el.addEventListener('playing', function () { lastEl = el; active.add(el); report(); notify(); });
     ['pause', 'ended', 'emptied', 'error', 'abort'].forEach(function (type) {
       el.addEventListener(type, function () { active['delete'](el); report(); });
+    });
+    // Waiting for data (start of a song, a slow connection, a seek) and getting it again changes "buffering".
+    ['waiting', 'stalled', 'canplay', 'seeking', 'seeked'].forEach(function (type) {
+      el.addEventListener(type, function () { notify(); });
     });
     if (!el.paused && !el.ended) { lastEl = el; active.add(el); report(); }
   }
@@ -86,6 +92,14 @@
     img.src = url;
   }
 
+  /* True while the song is chosen to play but no sound is coming out yet: it is still being downloaded, or the audio
+     element is waiting for data. The app then freezes the notification's clock instead of counting forward. */
+  function isBuffering(p) {
+    if (p.loading) return true;
+    var el = p.audio;
+    return !!(el && !el.paused && !el.ended && el.readyState < 3);
+  }
+
   var sentPlaying = null;   // last play state sent to the app
 
   // Commands from the notification / lock screen / headset buttons.
@@ -98,6 +112,8 @@
         else if (action === 'next') p.next();
         else if (action === 'prev') p.prev();
         else if (action === 'seek') p.seekTo(Number(arg) || 0);
+        else if (action === 'shuffle') p.toggleShuffle();
+        else if (action === 'repeat') p.cycleRepeat();
         return;
       }
       // Fallback without the player object: play / pause the audio element itself.
@@ -115,12 +131,13 @@
 
   function wire(p) {
     var lastArt = null, cleared = false;
-    var sentPos = 0, sentAt = 0, hold = null;
+    var sentPos = 0, sentAt = 0, sentBuffering = false, sentSig = '', hold = null;
 
-    function push(settled) {
+    /* force: send even if nothing we track has changed. settled: a "not playing" has lasted long enough to be believed. */
+    function push(settled, force) {
       var item = p.current;
       if (!item) {
-        if (!cleared) { cleared = true; lastArt = null; sentPlaying = null; try { A.clearMedia(); } catch (e) { /* gone */ } }
+        if (!cleared) { cleared = true; lastArt = null; sentPlaying = null; sentSig = ''; try { A.clearMedia(); } catch (e) { /* gone */ } }
         return;
       }
       cleared = false;
@@ -133,17 +150,25 @@
       dur = isFinite(dur) && dur > 0 ? Math.round(dur * 1000) : 0;
       var pos = Math.max(0, Math.round((Number(p.position) || 0) * 1000));
       var playing = !!p.isPlaying;
+      var shuffle = !!p.shuffle;
+      var repeat = p.repeat === 'all' ? 1 : p.repeat === 'one' ? 2 : 0;
 
       // Between two songs the player is "not playing" for a moment: only believe a pause once it has lasted a little.
       if (!playing && sentPlaying === true && !settled) {
-        if (!hold) hold = setTimeout(function () { hold = null; push(true); }, 700);
+        if (!hold) hold = setTimeout(function () { hold = null; push(true, true); }, 700);
         playing = true;
       } else if (playing && hold) {
         clearTimeout(hold); hold = null;
       }
+      var buffering = playing && isBuffering(p);
 
-      try { A.setMedia(String(title), String(artist), String(album), art, dur, pos, playing); } catch (e) { return; }
-      sentPlaying = playing; sentPos = pos; sentAt = Date.now();
+      // Events like 'waiting' / 'canplay' fire often: only talk to the app when something it shows has changed.
+      var sig = [title, artist, album, art, dur, playing, buffering, shuffle, repeat].join('\u0001');
+      var expected = sentPos + (sentPlaying && !sentBuffering ? Date.now() - sentAt : 0);   // where the app's own clock is now
+      if (!force && sig === sentSig && Math.abs(pos - expected) <= 1500) return;
+
+      try { A.setMedia(String(title), String(artist), String(album), art, dur, pos, playing, buffering, shuffle, repeat); } catch (e) { return; }
+      sentPlaying = playing; sentBuffering = buffering; sentPos = pos; sentAt = Date.now(); sentSig = sig;
 
       if (art !== lastArt) {
         lastArt = art;
@@ -151,14 +176,12 @@
       }
     }
 
-    p.addEventListener('change', function () { push(false); });
-    // 'time' fires all the time while playing: only a jump (a seek) is worth telling the app, it can count the time itself.
-    p.addEventListener('time', function () {
-      if (!p.current || sentPlaying === null) return;
-      var expected = sentPos + (sentPlaying ? Date.now() - sentAt : 0);
-      if (Math.abs((Number(p.position) || 0) * 1000 - expected) > 1500) push(false);
-    });
-    push(false);
+    p.addEventListener('change', function () { push(false, true); });
+    // 'time' fires all the time while playing: the app counts the time itself, so only a jump (a seek) or the end of a
+    // buffering pause is worth telling it.
+    p.addEventListener('time', function () { push(false, false); });
+    notify = function () { push(false, false); };
+    push(false, true);
   }
 
   init(0);

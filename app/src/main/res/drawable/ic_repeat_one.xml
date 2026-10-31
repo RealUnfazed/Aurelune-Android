@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Material Symbols (Apache 2.0); the dot under the icon marks "on" even where the system tints every icon the same colour. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="28dp"
+    android:height="28dp"
+    android:viewportWidth="28"
+    android:viewportHeight="28">
+    <group
+        android:translateX="2"
+        android:translateY="1">
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:pathData="M7,7h10v3l4,-4 -4,-4v3H5v6h2V7zM17,17H7v-3l-4,4 4,4v-3h12v-6h-2v4zM13,15V9h-1l-2,1v1h1.5v4H13z" />
+    </group>
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M12.5,26a1.5,1.5 0 1,0 3,0a1.5,1.5 0 1,0 -3,0z" />
+</vector>

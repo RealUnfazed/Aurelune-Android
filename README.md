@@ -10,7 +10,7 @@ It adds the few things a bare WebView is missing:
 | Uploads | `<input type="file">` opens the system file picker (artists uploading music, covers…) |
 | Back button | goes back inside the site, then sends the app to the background (music keeps playing) |
 | Links | other websites open in the browser; links to your site stay in the app; links to your site tapped in other apps can open in Aurelune |
-| Background music + controls | a foreground service keeps the app alive and the CPU awake while audio plays. The notification (and lock screen) shows the song's title, artist and cover with **previous / play-pause / next** buttons and a seek bar; headset and Bluetooth buttons work too. Pausing keeps the notification so you can resume from it; swiping it away stops the music |
+| Background music + controls | a foreground service keeps the app alive and the CPU awake while audio plays. The notification (and lock screen) shows the song's title, artist and cover with **shuffle / previous / play-pause / next / repeat** buttons (shuffle and repeat show their on/off/one state) and a seek bar; headset and Bluetooth buttons work too. Pausing keeps the notification so you can resume from it; swiping it away stops the music |
 | Offline | the site's own service worker + IndexedDB offline downloads work as in a browser; if the site can't be reached at all you get a "Try again" screen |
 | File downloads | files the site offers (e.g. your data export) are saved to Downloads |
 | Look | dark from the first frame, status/navigation bars match, notch and keyboard handled, Aurelune icon |
@@ -54,6 +54,14 @@ keytool -genkeypair -keystore aurelune-release.jks -alias aurelune -keyalg RSA -
 
 (then put the passwords in `signing.properties`). For a CI that keeps the key out of the repo, the build also reads
 `AURELUNE_KEYSTORE`, `AURELUNE_STORE_PASSWORD`, `AURELUNE_KEY_ALIAS` and `AURELUNE_KEY_PASSWORD` from the environment.
+
+## If Vercel (or any firewall) blocks the app
+
+The app sends the same user-agent as normal mobile Chrome (no `wv`, no custom name), so a bot check has nothing odd to
+react to. To see why a request was blocked, open the project on Vercel → **Firewall** (or **Security**) → traffic/logs:
+it names the rule. Things worth checking there: *Attack Challenge Mode* (turn it off, or add a bypass rule), *Bot
+Protection* rules, and rate limits. In the app, `window.AurAndroid` exists only inside the Android app, if the site ever
+needs to know.
 
 ## Known limits
 

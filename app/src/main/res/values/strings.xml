@@ -8,6 +8,11 @@
     <string name="action_play">Play</string>
     <string name="action_pause">Pause</string>
     <string name="action_next">Next</string>
+    <string name="action_shuffle_off">Shuffle: off</string>
+    <string name="action_shuffle_on">Shuffle: on</string>
+    <string name="action_repeat_off">Repeat: off</string>
+    <string name="action_repeat_all">Repeat: all</string>
+    <string name="action_repeat_one">Repeat: one</string>
     <string name="download_started">Downloading…</string>
     <string name="download_failed">Could not start the download</string>
     <string name="no_file_picker">No app available to pick a file</string>

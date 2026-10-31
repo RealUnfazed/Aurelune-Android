@@ -67,6 +67,8 @@ public class MainActivity extends Activity {
     private String[] pendingDownload; // url, userAgent, contentDisposition, mimeType: waiting for the storage permission (Android 9 and older)
 
     private boolean resumed;
+    private boolean errorSeen;      // the page that is loading has failed (so don't reveal Chromium's own error page)
+    private long lastAutoRetry;     // when the app last retried a failed load by itself
 
     /* ------------------------------------------------------------------ lifecycle */
 
@@ -188,7 +190,10 @@ public class MainActivity extends Activity {
         s.setAllowFileAccess(false);                  // (the bundled offline.html is under android_asset, which is always readable)
         s.setAllowContentAccess(false);
         s.setGeolocationEnabled(false);
-        s.setUserAgentString(s.getUserAgentString() + " AureluneAndroid/" + BuildConfig.VERSION_NAME);
+        // Look like ordinary mobile Chrome: firewalls / bot checks (e.g. Vercel's) are more likely to challenge or block a
+        // user-agent that says "wv" (WebView) or carries an unknown product name. The page can still tell it is the app
+        // by checking window.AurAndroid.
+        s.setUserAgentString(s.getUserAgentString().replace("; wv", "").replace(" Version/4.0", ""));
 
         CookieManager.getInstance().setAcceptThirdPartyCookies(web, true);
         WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG);
@@ -259,7 +264,13 @@ public class MainActivity extends Activity {
         }
 
         @Override
+        public void onPageStarted(WebView view, String url, Bitmap favicon) {
+            errorSeen = false;
+        }
+
+        @Override
         public void onPageFinished(WebView view, String url) {
+            if (!errorSeen) view.setVisibility(View.VISIBLE);
             CookieManager.getInstance().flush();
             if (url != null && isOurHost(Uri.parse(url))) {
                 String js = readAsset("bridge.js");
@@ -271,7 +282,26 @@ public class MainActivity extends Activity {
         public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
             // Only when the page itself can't load (no network, server down). If the site's service worker has a
             // saved copy it answers instead, and this is never reached.
-            if (request.isForMainFrame() && !request.getUrl().toString().startsWith(OFFLINE_PAGE)) showOfflinePage();
+            if (!request.isForMainFrame() || request.getUrl().toString().startsWith(OFFLINE_PAGE)) return;
+            errorSeen = true;
+
+            // Opening the app with no connection can fail once before the service worker takes over, and a second
+            // load a moment later then opens the saved app (offline mode). So try once more by ourselves, with the
+            // browser's own error page hidden, before showing "Can't reach Aurelune".
+            long now = SystemClock.elapsedRealtime();
+            if (now - lastAutoRetry > 30000) {
+                lastAutoRetry = now;
+                final String failedUrl = request.getUrl().toString();
+                view.setVisibility(View.INVISIBLE);
+                view.postDelayed(() -> {
+                    if (web != null) web.loadUrl(failedUrl);
+                }, 1000);
+                view.postDelayed(() -> {   // safety net: never leave the screen blank
+                    if (web != null) web.setVisibility(View.VISIBLE);
+                }, 12000);
+                return;
+            }
+            showOfflinePage();
         }
 
         @Override
@@ -395,7 +425,8 @@ public class MainActivity extends Activity {
     }
 
     /** The page reports what is playing (bridge.js, part 2). */
-    private void onMedia(String title, String artist, String album, String artUrl, long durationMs, long positionMs, boolean isPlaying) {
+    private void onMedia(String title, String artist, String album, String artUrl, long durationMs, long positionMs,
+                         boolean isPlaying, boolean isBuffering, boolean shuffle, int repeat) {
         if (!artUrl.equals(MediaState.artUrl)) {
             MediaState.artUrl = artUrl;
             MediaState.artwork = null; // the new cover arrives in onArtwork()
@@ -407,6 +438,9 @@ public class MainActivity extends Activity {
         MediaState.positionMs = positionMs;
         MediaState.positionAt = SystemClock.elapsedRealtime();
         MediaState.playing = isPlaying;
+        MediaState.buffering = isBuffering;
+        MediaState.shuffle = shuffle;
+        MediaState.repeat = repeat;
         afterStateChange();
     }
 
@@ -479,7 +513,14 @@ public class MainActivity extends Activity {
         }
         if ("play".equals(action) || "pause".equals(action)) {
             MediaState.playing = "play".equals(action); // show it at once; the page's own report follows
+            if (!MediaState.playing) MediaState.buffering = false;
             afterStateChange();
+        } else if ("shuffle".equals(action)) {
+            MediaState.shuffle = !MediaState.shuffle;
+            PlaybackService.refresh();
+        } else if ("repeat".equals(action)) {
+            MediaState.repeat = (MediaState.repeat + 1) % 3;
+            PlaybackService.refresh();
         }
         runControl(action, seconds);
     }
@@ -519,12 +560,13 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
-        public void setMedia(String title, String artist, String album, String artUrl, long durationMs, long positionMs, boolean isPlaying) {
+        public void setMedia(String title, String artist, String album, String artUrl, long durationMs, long positionMs,
+                             boolean isPlaying, boolean isBuffering, boolean shuffle, int repeat) {
             final String t = title == null ? "" : title;
             final String ar = artist == null ? "" : artist;
             final String al = album == null ? "" : album;
             final String u = artUrl == null ? "" : artUrl;
-            activity.runOnUiThread(() -> activity.onMedia(t, ar, al, u, durationMs, positionMs, isPlaying));
+            activity.runOnUiThread(() -> activity.onMedia(t, ar, al, u, durationMs, positionMs, isPlaying, isBuffering, shuffle, repeat));
         }
 
         @JavascriptInterface
