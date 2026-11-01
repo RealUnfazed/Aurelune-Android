@@ -1,7 +1,7 @@
 # Aurelune for Android
 
 A tiny Android app that opens **https://aurelune.unfazed.ir/** full screen. It is a plain WebView: no Capacitor, no
-Cordova, no AndroidX, no dependencies at all. Two Java files, one manifest.
+Cordova, no AndroidX, no dependencies at all. Two Java files, one manifest!
 
 It adds the few things a bare WebView is missing:
 
