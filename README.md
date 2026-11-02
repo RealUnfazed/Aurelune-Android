@@ -1,7 +1,7 @@
 # Aurelune for Android
 
 A tiny Android app that opens **https://aurelune.unfazed.ir/** full screen. It is a plain WebView: no Capacitor, no
-Cordova, no AndroidX, no dependencies at all. Two Java files, one manifest!
+Cordova, no AndroidX, no dependencies at all. Two Java files, one manifest.
 
 It adds the few things a bare WebView is missing:
 
@@ -73,3 +73,8 @@ needs to know.
   (same as clearing a browser's site data).
 - Blob/data downloads started by the page are not supported (normal `https` downloads are).
 - Debug the page from a computer: install a debug build, open `chrome://inspect` in desktop Chrome.
+
+## License
+
+MIT, see [LICENSE](LICENSE). Copyright (c) 2026 Alireza Asakareh (RealUnfazed).
+This covers the Android app in this folder; the Aurelune website itself has its own license.
